@@ -1,45 +1,171 @@
-// 1. Tạo nút Export
+// 1. Tạo nút Export dạng icon tròn, draggable
 const btn = document.createElement("button");
-btn.innerText = "📥 Export Toàn Diện Toàn Bộ Bảng";
-btn.style.position = "fixed";
-btn.style.bottom = "20px";
-btn.style.right = "20px";
-btn.style.zIndex = "9999";
-btn.style.padding = "10px 15px";
-btn.style.backgroundColor = "#ff9800";
-btn.style.color = "white";
-btn.style.border = "none";
-btn.style.borderRadius = "5px";
-btn.style.cursor = "pointer";
-btn.style.boxShadow = "0 4px 6px rgba(0,0,0,0.1)";
-btn.style.fontWeight = "bold";
+btn.title = "Export Toàn Bộ Bảng";
+const ICON_EXCEL = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+const ICON_LOADING = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>`;
+btn.innerHTML = ICON_EXCEL;
+
+Object.assign(btn.style, {
+    position: "fixed",
+    bottom: "24px",
+    right: "24px",
+    zIndex: "9999",
+    width: "52px",
+    height: "52px",
+    borderRadius: "50%",
+    backgroundColor: "#1976d2",
+    border: "none",
+    cursor: "grab",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transition: "background-color 0.2s, transform 0.1s",
+    userSelect: "none",
+});
+
+btn.addEventListener("mouseenter", () => {
+    if (!btn.disabled) btn.style.backgroundColor = "#1565c0";
+});
+btn.addEventListener("mouseleave", () => {
+    if (!btn.disabled) btn.style.backgroundColor = "#1976d2";
+});
 
 document.body.appendChild(btn);
+
+// --- DRAG LOGIC ---
+let isDragging = false;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+let dragMoved = false;
+
+btn.addEventListener("mousedown", (e) => {
+    isDragging = true;
+    dragMoved = false;
+    dragOffsetX = e.clientX - btn.getBoundingClientRect().left;
+    dragOffsetY = e.clientY - btn.getBoundingClientRect().top;
+    btn.style.cursor = "grabbing";
+    btn.style.transition = "none";
+    e.preventDefault();
+});
+
+document.addEventListener("mousemove", (e) => {
+    if (!isDragging) return;
+    dragMoved = true;
+    const y = e.clientY - dragOffsetY;
+    const maxY = window.innerHeight - btn.offsetHeight;
+
+    // Chỉ cho di chuyển dọc, cố định sát viền phải
+    btn.style.top = Math.max(0, Math.min(y, maxY)) + "px";
+    btn.style.right = "12px";
+    btn.style.left = "auto";
+    btn.style.bottom = "auto";
+});
+
+document.addEventListener("mouseup", () => {
+    if (isDragging) {
+        isDragging = false;
+        btn.style.cursor = "grab";
+        btn.style.transition = "background-color 0.2s, transform 0.1s";
+    }
+});
+
+// Nếu drag thì không trigger click
+btn.addEventListener("click", (e) => {
+    if (dragMoved) { dragMoved = false; e.stopImmediatePropagation(); }
+}, true);
 
 // --- CÁC HÀM HỖ TRỢ ---
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-function extractTableData(table, isFirstPage, isMainTable) {
-    let data = [];
-    let rows = table.querySelectorAll("tr");
+// Convert "rgb(r, g, b)" hoặc "rgba(r,g,b,a)" → "RRGGBB" cho xlsx
+function rgbToHex(cssColor) {
+    if (!cssColor || cssColor === "transparent" || cssColor === "rgba(0, 0, 0, 0)") return null;
+    const m = cssColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (!m) return null;
+    return [m[1], m[2], m[3]]
+        .map(n => parseInt(n).toString(16).padStart(2, "0"))
+        .join("").toUpperCase();
+}
+
+// Đọc computed style của 1 cell DOM → object style xlsx-js-style
+function getCellStyle(el) {
+    const cs = window.getComputedStyle(el);
+
+    const bgHex = rgbToHex(cs.backgroundColor);
+    const colorHex = rgbToHex(cs.color) || "000000";
+    const bold = cs.fontWeight >= 600 || cs.fontWeight === "bold" || cs.fontWeight === "bolder";
+    const italic = cs.fontStyle === "italic";
+    const fontSize = Math.round(parseFloat(cs.fontSize) * 0.75); // px → pt
+
+    const alignMap = { left: "left", center: "center", right: "right", justify: "justify" };
+    const align = alignMap[cs.textAlign] || "left";
+
+    // Border: lấy border-bottom làm đại diện (phổ biến nhất trong table)
+    const hasBorder = parseFloat(cs.borderBottomWidth) > 0 || parseFloat(cs.borderTopWidth) > 0;
+    const borderColor = rgbToHex(cs.borderBottomColor) || "000000";
+    const borderSide = { style: "thin", color: { rgb: borderColor } };
+
+    const style = {
+        font: { bold, italic, sz: fontSize, color: { rgb: colorHex } },
+        alignment: { horizontal: align, vertical: "center", wrapText: false },
+        border: hasBorder ? { top: borderSide, bottom: borderSide, left: borderSide, right: borderSide }
+                          : { top: borderSide, bottom: borderSide, left: borderSide, right: borderSide },
+    };
+    if (bgHex) style.fill = { fgColor: { rgb: bgHex } };
+    return style;
+}
+
+// Trích xuất data + style từ table DOM, trả về { data[][], styles[][] }
+function extractTableWithStyles(table, skipHeader) {
+    const data = [];
+    const styles = [];
+    const rows = table.querySelectorAll("tr");
 
     rows.forEach((row) => {
-        // Nếu là bảng chính và không phải trang 1 -> bỏ qua dòng chứa thẻ TH (tiêu đề) để khỏi lặp tiêu đề
-        if (isMainTable && !isFirstPage && row.querySelector("th")) {
-            return;
-        }
-
-        let rowData = [];
-        let cells = row.querySelectorAll("th, td");
-        cells.forEach(cell => {
+        if (skipHeader && row.querySelector("th")) return;
+        const rowData = [];
+        const rowStyles = [];
+        row.querySelectorAll("th, td").forEach(cell => {
             rowData.push(cell.innerText.trim());
+            rowStyles.push(getCellStyle(cell));
         });
         if (rowData.length > 0) {
             data.push(rowData);
+            styles.push(rowStyles);
         }
     });
-    return data;
+    return { data, styles };
+}
+
+// Tính column widths từ data
+function autoColWidths(data) {
+    if (!data || data.length === 0) return [];
+    const numCols = Math.max(...data.map(r => r.length));
+    const widths = Array(numCols).fill(10);
+    data.forEach(row => {
+        row.forEach((cell, i) => {
+            const len = String(cell ?? "").length;
+            if (len > widths[i]) widths[i] = len;
+        });
+    });
+    return widths.map(w => ({ wch: Math.min(w + 2, 60) }));
+}
+
+// Tạo sheet từ data + styles đã extract
+function buildSheet(data, styles) {
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws["!cols"] = autoColWidths(data);
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+    for (let R = range.s.r; R <= range.e.r; R++) {
+        for (let C = range.s.c; C <= range.e.c; C++) {
+            const addr = XLSX.utils.encode_cell({ r: R, c: C });
+            if (!ws[addr]) ws[addr] = { v: "", t: "s" };
+            if (styles[R] && styles[R][C]) ws[addr].s = styles[R][C];
+        }
+    }
+    return ws;
 }
 
 // Tìm nút Next
@@ -153,7 +279,7 @@ function analyzeTables() {
 
 // --- LOGIC XỬ LÝ CHÍNH KHI BẤM NÚT ---
 btn.addEventListener("click", async () => {
-    btn.innerText = "⏳ Đang quét dữ liệu toàn diện...";
+    btn.innerHTML = ICON_LOADING;
     btn.style.backgroundColor = "#607d8b";
     btn.disabled = true;
 
@@ -181,7 +307,8 @@ btn.addEventListener("click", async () => {
         }
 
         let mainTableData = [];
-        let extraTablesData = []; // Mảng chứa dữ liệu các bảng phụ
+        let mainTableStyles = [];
+        let extraTablesData = [];
 
         let currentPage = 1;
         let hasNextPage = true;
@@ -189,78 +316,59 @@ btn.addEventListener("click", async () => {
         while (hasNextPage) {
             console.log(`Đang lấy dữ liệu trang ${currentPage}...`);
 
-            // Phân tích toàn bộ bảng trên màn hình
             let analysis = analyzeTables();
             if (analysis.tables.length === 0) {
                 if (currentPage === 1) alert("Không tìm thấy bảng dữ liệu nào!");
                 break;
             }
 
-            // Ở TRANG ĐẦU TIÊN: Ta lấy dữ liệu của TẤT CẢ các bảng
             if (currentPage === 1) {
                 analysis.tables.forEach((table, index) => {
-                    let isMain = (index === analysis.mainIndex);
-                    let data = extractTableData(table, true, isMain);
-
+                    const isMain = (index === analysis.mainIndex);
+                    const { data, styles } = extractTableWithStyles(table, false);
                     if (isMain) {
                         mainTableData = mainTableData.concat(data);
+                        mainTableStyles = mainTableStyles.concat(styles);
                     } else {
-                        // Lưu các bảng phụ lại, chỉ lấy 1 lần ở trang đầu
-                        extraTablesData.push({
-                            sheetName: `Bang_Phu_${index + 1}`,
-                            data: data
-                        });
+                        extraTablesData.push({ sheetName: `Bang_Phu_${index + 1}`, data, styles });
                     }
                 });
-            }
-            // TỪ TRANG THỨ 2 TRỞ ĐI: Chỉ lặp và nối dữ liệu cho bảng Chính (để tránh nhân bản bảng phụ)
-            else {
-                if (analysis.mainIndex !== -1) {
-                    let mainTable = analysis.tables[analysis.mainIndex];
-                    let data = extractTableData(mainTable, false, true);
-                    mainTableData = mainTableData.concat(data);
-                }
-            }
-
-            let nextBtn = findNextButton();
-
-            if (nextBtn) {
-                nextBtn.click();
-                currentPage++;
-                await waitForPageChange();
             } else {
-                hasNextPage = false;
-            }
-        }
-
-        // --- XUẤT FILE EXCEL VỚI NHIỀU SHEET ---
-        if (mainTableData.length > 0 || extraTablesData.length > 0) {
-            const workbook = XLSX.utils.book_new();
-
-            // 1. Ghi bảng chính (chứa dữ liệu của tất cả các trang) vào Sheet đầu tiên
-            if (mainTableData.length > 0) {
-                const mainSheet = XLSX.utils.aoa_to_sheet(mainTableData);
-                XLSX.utils.book_append_sheet(workbook, mainSheet, "Data_Chinh");
-            }
-
-            // 2. Ghi các bảng phụ (nếu có) vào các Sheet tiếp theo
-            extraTablesData.forEach((extraTable) => {
-                if (extraTable.data.length > 0) {
-                    const extraSheet = XLSX.utils.aoa_to_sheet(extraTable.data);
-                    XLSX.utils.book_append_sheet(workbook, extraSheet, extraTable.sheetName);
+                if (analysis.mainIndex !== -1) {
+                    const { data, styles } = extractTableWithStyles(analysis.tables[analysis.mainIndex], true);
+                    mainTableData = mainTableData.concat(data);
+                    mainTableStyles = mainTableStyles.concat(styles);
                 }
-            });
+            }
 
-            XLSX.writeFile(workbook, "DuLieu_ToanDien.xlsx");
-            console.log("Xuất Excel thành công!");
+            const nextBtn = findNextButton();
+            if (nextBtn) { nextBtn.click(); currentPage++; await waitForPageChange(); }
+            else { hasNextPage = false; }
         }
+
+        // --- XUẤT TỪNG FILE EXCEL RIÊNG CHO MỖI BẢNG ---
+        if (mainTableData.length > 0) {
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, buildSheet(mainTableData, mainTableStyles), "Data");
+            XLSX.writeFile(wb, "Bang_Chinh.xlsx");
+        }
+
+        extraTablesData.forEach((t, i) => {
+            if (t.data.length > 0) {
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, buildSheet(t.data, t.styles), "Data");
+                XLSX.writeFile(wb, `Bang_Phu_${i + 1}.xlsx`);
+            }
+        });
+
+        console.log("Xuất Excel thành công!");
 
     } catch (error) {
         console.error("Lỗi trong quá trình quét:", error);
         alert("Có lỗi xảy ra, vui lòng xem Console!");
     } finally {
-        btn.innerText = "📥 Export Toàn Diện Toàn Bộ Bảng";
-        btn.style.backgroundColor = "#ff9800";
+        btn.innerHTML = ICON_EXCEL;
+        btn.style.backgroundColor = "#1976d2";
         btn.disabled = false;
     }
 });
