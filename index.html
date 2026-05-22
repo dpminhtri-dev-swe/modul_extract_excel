@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tra Cứu Biên Lai</title>
+    <link rel="stylesheet" href="index.css">
+    <!-- Font Awesome cho các icon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Thư viện SheetJS (xlsx) dùng để xuất file Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <!-- Top Header -->
+    <header class="top-header">
+        <div class="logo-area">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Emblem_of_Vietnam.svg/1024px-Emblem_of_Vietnam.svg.png" alt="Logo" class="logo">
+            <span class="system-name">HỆ THỐNG THÔNG TIN GIẢI QUYẾT THỦ TỤC HÀNH CHÍNH</span>
+        </div>
+        <div class="user-area">
+            <span class="user-name">BÙI KIM GIÀU</span>
+            <button class="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Đăng xuất</button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="search-sidebar">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" placeholder="Tìm kiếm">
+            </div>
+            <ul class="menu">
+                <li><i class="fa-solid fa-house"></i> Trang chủ</li>
+                <li><i class="fa-solid fa-user"></i> Quản lý tài khoản CBT <i class="fa-solid fa-chevron-down float-right"></i></li>
+                <li><i class="fa-solid fa-file-lines"></i> Quản lý TTHC <i class="fa-solid fa-chevron-down float-right"></i></li>
+                <li><i class="fa-solid fa-share-nodes"></i> Phân công xử lý <i class="fa-solid fa-chevron-down float-right"></i></li>
+                <li class="active"><i class="fa-solid fa-magnifying-glass"></i> Tra cứu hồ sơ <i class="fa-solid fa-chevron-down float-right"></i></li>
+                <li><i class="fa-solid fa-chart-pie"></i> Báo cáo thống kê đánh giá <i class="fa-solid fa-chevron-down float-right"></i></li>
+                <li><i class="fa-solid fa-map"></i> Bản đồ số <i class="fa-solid fa-chevron-down float-right"></i></li>
+                <li><i class="fa-solid fa-chart-line"></i> Báo cáo thống kê TTHC <i class="fa-solid fa-chevron-down float-right"></i></li>
+                <li><i class="fa-solid fa-folder-open"></i> Quản lý File lớn <i class="fa-solid fa-chevron-down float-right"></i></li>
+            </ul>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="content">
+            <div class="breadcrumb">
+                Quản lý Ủy nhiệm thu > <strong>Tra cứu biên lai</strong>
+            </div>
+
+            <div class="search-section">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Cơ quan thuế Tỉnh/ Thành phố</label>
+                        <select><option>Chọn ...</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Cơ quan thuế cơ sở</label>
+                        <select><option>Chọn ...</option></select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Đơn vị ủy nhiệm thu</label>
+                        <select><option>Chọn ...</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Phường/Xã</label>
+                        <select><option>Chọn ...</option></select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Mã số thuế của NNT</label>
+                        <input type="text" id="mstNNT" placeholder="Nhập mã số thuế">
+                    </div>
+                    <div class="form-group">
+                        <label>CCCD cán bộ ủy nhiệm thu</label>
+                        <input type="text" id="cccdCanBo" placeholder="Nhập">
+                    </div>
+
+                    <div class="form-group">
+                        <label>CCCD của NNT</label>
+                        <input type="text" id="cccdNNT" placeholder="Nhập">
+                    </div>
+                    <div class="form-group">
+                        <label>Trạng thái</label>
+                        <select><option>Chọn ...</option></select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Cán bộ thu</label>
+                        <input type="text" id="canBoThu" placeholder="Nhập họ và tên cán bộ thu">
+                    </div>
+                    <div class="form-row-date">
+                        <div class="form-group">
+                            <label>Từ ngày *</label>
+                            <input type="date" value="2026-05-22">
+                        </div>
+                        <div class="form-group">
+                            <label>Đến ngày *</label>
+                            <input type="date" value="2026-05-22">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button id="searchBtn" class="btn btn-primary">Tìm kiếm</button>
+                    <!-- Thêm nút xuất Excel bên cạnh nút tìm kiếm -->
+                    <button id="exportBtn" class="btn btn-success" disabled><i class="fa-solid fa-file-excel"></i> Xuất Excel</button>
+                </div>
+            </div>
+
+            <div class="results-section">
+                <div class="pagination-info">
+                    <span>Trang <input type="number" value="1" class="page-input"> /3 - Tổng số bản ghi: <strong id="totalRecords">0</strong></span>
+                    <div class="pagination">
+                        <button class="active">1</button>
+                        <button>2</button>
+                        <button>3</button>
+                        <button>»</button>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table id="dataTable" class="table hidden">
+                        <thead>
+                            <tr>
+                                <th>STT</th>
+                                <th>MST Đơn vị ủy nhiệm thu</th>
+                                <th>Đơn vị ủy nhiệm thu</th>
+                                <th>Cán bộ thu</th>
+                                <th>CCCD Cán bộ thu</th>
+                                <th>Cơ quan thu</th>
+                                <th>Mã số thuế của NNT</th>
+                                <th>CCCD của NNT</th>
+                                <th>Tên người nộp thuế</th>
+                                <th>Mã thửa đất</th>
+                                <th>Số tiền</th>
+                                <th>Ngày xuất biên lai</th>
+                                <th>Trạng thái hồ sơ</th>
+                                <th>Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <!-- Dữ liệu render bằng JS -->
+                        </tbody>
+                    </table>
+                    <div id="loading" class="hidden text-center p-4">Đang tải dữ liệu...</div>
+                    <div id="noData" class="hidden text-center p-4">Chưa có dữ liệu. Vui lòng nhập thông tin và tìm kiếm.</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="fetch_and_export.js"></script>
+</body>
+</html>
