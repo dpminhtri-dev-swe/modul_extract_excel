@@ -1,3 +1,4 @@
+(() => {
 // --- CSS NỘI BỘ CHO TOAST VÀ SPINNER ---
 const styleTag = document.createElement("style");
 styleTag.innerHTML = `
@@ -497,3 +498,5 @@ btn.addEventListener("click", async () => {
         }
     }
 });
+
+})();
