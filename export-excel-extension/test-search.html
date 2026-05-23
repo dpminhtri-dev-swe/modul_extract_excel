@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Export với Tìm Kiếm</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; padding: 24px; background: #f0f2f5; }
+        h2 { color: #222; font-size: 18px; margin-bottom: 16px; }
+
+        .search-box { 
+            background: white; padding: 16px; border-radius: 6px; 
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1); margin-bottom: 16px;
+        }
+        .search-box input {
+            width: 100%; max-width: 400px; padding: 10px 14px;
+            border: 1px solid #ccc; border-radius: 4px; font-size: 14px;
+        }
+        .search-box input:focus { outline: none; border-color: #1565c0; }
+
+        .table-wrapper { background: white; border-radius: 6px; box-shadow: 0 1px 6px rgba(0,0,0,0.1); overflow: hidden; }
+
+        table { border-collapse: collapse; width: 100%; font-size: 13px; }
+        thead tr { background: #1565c0; }
+        th {
+            color: white; font-weight: 600; padding: 10px 12px;
+            text-align: center; border: 1px solid #1976d2;
+            white-space: nowrap;
+        }
+        td {
+            padding: 9px 12px; border: 1px solid #e0e0e0;
+            color: #222; vertical-align: top;
+        }
+        tbody tr:nth-child(even) td { background: #fafafa; }
+        tbody tr:hover td { background: #e3f2fd; }
+
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 13px; color: #555; }
+        .pagination { display: flex; gap: 4px; align-items: center; }
+        .pagination button {
+            min-width: 32px; height: 32px; padding: 0 10px;
+            border: 1px solid #1565c0; background: white; color: #1565c0;
+            border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;
+        }
+        .pagination button.active { background: #1565c0; color: white; }
+        .pagination button:disabled { opacity: 0.35; cursor: default; border-color: #ccc; color: #999; }
+    </style>
+</head>
+<body>
+
+<h2>Danh sách nhân viên (Test tìm kiếm + phân trang)</h2>
+
+<div class="search-box">
+    <input type="text" id="searchInput" placeholder="🔍 Tìm kiếm theo tên, phòng ban, chức vụ...">
+</div>
+
+<div class="top-bar">
+    <span id="pageInfo"></span>
+    <div class="pagination">
+        <button id="btnFirst">«</button>
+        <button id="btnPrev">‹</button>
+        <span id="pageNumbers"></span>
+        <button id="btnNext">›</button>
+        <button id="btnLast">»</button>
+    </div>
+</div>
+
+<div class="table-wrapper">
+<table id="mainTable">
+    <thead>
+        <tr>
+            <th>STT</th>
+            <th>Họ và Tên</th>
+            <th>Phòng Ban</th>
+            <th>Chức Vụ</th>
+            <th>Email</th>
+            <th>Số Điện Thoại</th>
+            <th>Ngày Vào Làm</th>
+            <th>Lương (VNĐ)</th>
+        </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+</table>
+</div>
+
+<script>
+// Dữ liệu mẫu 60 nhân viên
+const allData = [
+    ["Nguyễn Văn An", "Kỹ Thuật", "Senior Dev", "an.nguyen@company.com", "0901234567", "01/03/2020", "22,000,000"],
+    ["Trần Thị Bình", "Kinh Doanh", "Sales Manager", "binh.tran@company.com", "0912345678", "15/06/2019", "18,000,000"],
+    ["Lê Hoàng Cường", "Kỹ Thuật", "Junior Dev", "cuong.le@company.com", "0923456789", "10/01/2022", "12,000,000"],
+    ["Phạm Thị Dung", "Nhân Sự", "HR Executive", "dung.pham@company.com", "0934567890", "20/08/2021", "13,500,000"],
+    ["Hoàng Minh Đức", "Kế Toán", "Accountant", "duc.hoang@company.com", "0945678901", "05/11/2018", "15,000,000"],
+    ["Vũ Thị Hoa", "Marketing", "Content Writer", "hoa.vu@company.com", "0956789012", "12/04/2021", "11,000,000"],
+    ["Đặng Văn Hùng", "Kỹ Thuật", "DevOps", "hung.dang@company.com", "0967890123", "03/07/2020", "20,000,000"],
+    ["Bùi Thị Lan", "Kinh Doanh", "Sales Rep", "lan.bui@company.com", "0978901234", "18/09/2022", "10,500,000"],
+    ["Ngô Văn Long", "Kỹ Thuật", "Tech Lead", "long.ngo@company.com", "0989012345", "22/02/2017", "28,000,000"],
+    ["Lý Thị Mai", "Marketing", "SEO Specialist", "mai.ly@company.com", "0990123456", "07/05/2021", "13,000,000"],
+    ["Trịnh Văn Nam", "Kế Toán", "Chief Accountant", "nam.trinh@company.com", "0901122334", "14/10/2016", "22,000,000"],
+    ["Đinh Thị Oanh", "Nhân Sự", "HR Manager", "oanh.dinh@company.com", "0912233445", "30/01/2019", "19,000,000"],
+    ["Phan Văn Phúc", "Kỹ Thuật", "Backend Dev", "phuc.phan@company.com", "0923344556", "11/06/2021", "16,000,000"],
+    ["Cao Thị Quỳnh", "Kinh Doanh", "Account Manager", "quynh.cao@company.com", "0934455667", "25/03/2020", "17,500,000"],
+    ["Lưu Văn Sơn", "Kỹ Thuật", "Frontend Dev", "son.luu@company.com", "0945566778", "08/08/2022", "14,000,000"],
+    ["Tô Thị Thảo", "Marketing", "Brand Manager", "thao.to@company.com", "0956677889", "19/12/2018", "20,000,000"],
+    ["Hà Văn Tuấn", "Kinh Doanh", "Sales Director", "tuan.ha@company.com", "0967788990", "02/04/2015", "35,000,000"],
+    ["Dương Thị Uyên", "Nhân Sự", "Recruiter", "uyen.duong@company.com", "0978899001", "14/07/2022", "11,500,000"],
+    ["Mạc Văn Vinh", "Kỹ Thuật", "QA Engineer", "vinh.mac@company.com", "0989900112", "27/09/2020", "15,000,000"],
+    ["Kiều Thị Xuân", "Kế Toán", "Tax Specialist", "xuan.kieu@company.com", "0990011223", "06/02/2021", "14,500,000"],
+    ["Võ Văn Yên", "Kỹ Thuật", "System Admin", "yen.vo@company.com", "0901234560", "17/11/2019", "18,000,000"],
+    ["Đỗ Thị Ánh", "Marketing", "Designer", "anh.do@company.com", "0912345671", "23/05/2020", "13,500,000"],
+    ["Lâm Văn Bảo", "Kinh Doanh", "Business Analyst", "bao.lam@company.com", "0923456782", "09/08/2021", "16,500,000"],
+    ["Mai Thị Chi", "Nhân Sự", "Training Manager", "chi.mai@company.com", "0934567893", "15/03/2018", "17,000,000"],
+    ["Tạ Văn Duy", "Kế Toán", "Financial Analyst", "duy.ta@company.com", "0945678904", "21/06/2020", "15,500,000"],
+    ["Ông Thị Nga", "Marketing", "Social Media Manager", "nga.ong@company.com", "0956789015", "04/09/2021", "14,000,000"],
+    ["Từ Văn Phong", "Kỹ Thuật", "Mobile Dev", "phong.tu@company.com", "0967890126", "18/12/2019", "19,000,000"],
+    ["Lục Thị Quế", "Kinh Doanh", "Customer Success", "que.luc@company.com", "0978901237", "26/02/2022", "12,500,000"],
+    ["Nghiêm Văn Rồng", "Kỹ Thuật", "Data Engineer", "rong.nghiem@company.com", "0989012348", "13/07/2020", "21,000,000"],
+    ["Ứng Thị Sen", "Nhân Sự", "Payroll Specialist", "sen.ung@company.com", "0990123459", "29/10/2021", "13,000,000"],
+    ["Bạch Văn Tài", "Kế Toán", "Auditor", "tai.bach@company.com", "0901234561", "07/01/2019", "16,000,000"],
+    ["Đào Thị Uyển", "Marketing", "PR Manager", "uyên.dao@company.com", "0912345672", "14/04/2020", "18,500,000"],
+    ["Khúc Văn Vũ", "Kỹ Thuật", "Security Engineer", "vu.khuc@company.com", "0923456783", "22/08/2021", "23,000,000"],
+    ["Lương Thị Xuân", "Kinh Doanh", "Key Account Manager", "xuan.luong@company.com", "0934567894", "10/11/2019", "19,500,000"],
+    ["Mã Văn Yên", "Nhân Sự", "Compensation Analyst", "yen.ma@company.com", "0945678905", "28/01/2022", "14,500,000"],
+    ["Nhữ Thị Ánh", "Kế Toán", "Budget Analyst", "anh.nhu@company.com", "0956789016", "16/05/2020", "15,000,000"],
+    ["Ô Văn Bình", "Marketing", "Event Manager", "binh.o@company.com", "0967890127", "03/09/2021", "16,000,000"],
+    ["Phùng Thị Cẩm", "Kỹ Thuật", "Cloud Architect", "cam.phung@company.com", "0978901238", "19/12/2018", "26,000,000"],
+    ["Quách Văn Dũng", "Kinh Doanh", "Regional Manager", "dung.quach@company.com", "0989012349", "27/03/2020", "24,000,000"],
+    ["Sử Thị Hằng", "Nhân Sự", "Employee Relations", "hang.su@company.com", "0990123460", "05/07/2021", "13,500,000"],
+    ["Thái Văn Khoa", "Kế Toán", "Cost Accountant", "khoa.thai@company.com", "0901234562", "12/10/2019", "14,000,000"],
+    ["Ung Thị Linh", "Marketing", "Marketing Analyst", "linh.ung@company.com", "0912345673", "20/02/2022", "13,000,000"],
+    ["Văn Văn Minh", "Kỹ Thuật", "AI Engineer", "minh.van@company.com", "0923456784", "08/06/2020", "25,000,000"],
+    ["Xa Thị Ngọc", "Kinh Doanh", "Partnership Manager", "ngoc.xa@company.com", "0934567895", "15/09/2021", "18,000,000"],
+    ["Yên Văn Phú", "Nhân Sự", "Benefits Specialist", "phu.yen@company.com", "0945678906", "23/12/2019", "14,000,000"],
+    ["An Thị Quỳnh", "Kế Toán", "Treasury Analyst", "quynh.an@company.com", "0956789017", "01/04/2021", "16,500,000"],
+    ["Bành Văn Sáng", "Marketing", "Growth Hacker", "sang.banh@company.com", "0967890128", "09/08/2020", "17,000,000"],
+    ["Cung Thị Tâm", "Kỹ Thuật", "Product Manager", "tam.cung@company.com", "0978901239", "17/11/2019", "22,000,000"],
+    ["Đàm Văn Uy", "Kinh Doanh", "Channel Manager", "uy.dam@company.com", "0989012350", "25/02/2022", "16,000,000"],
+    ["Giang Thị Vân", "Nhân Sự", "Culture Manager", "van.giang@company.com", "0990123461", "04/06/2020", "15,500,000"],
+    ["Hồ Văn Xuân", "Kế Toán", "Compliance Officer", "xuan.ho@company.com", "0901234563", "12/09/2021", "17,500,000"],
+    ["Khương Thị Yến", "Marketing", "Influencer Manager", "yen.khuong@company.com", "0912345674", "20/12/2019", "14,500,000"],
+    ["Lã Văn Anh", "Kỹ Thuật", "Blockchain Dev", "anh.la@company.com", "0923456785", "28/03/2021", "24,000,000"],
+    ["Mạnh Thị Bích", "Kinh Doanh", "Export Manager", "bich.manh@company.com", "0934567896", "06/07/2020", "19,000,000"],
+    ["Ninh Văn Cường", "Nhân Sự", "Talent Acquisition", "cuong.ninh@company.com", "0945678907", "14/10/2021", "15,000,000"],
+    ["Ôn Thị Diệu", "Kế Toán", "Internal Auditor", "dieu.on@company.com", "0956789018", "22/01/2020", "16,000,000"],
+    ["Phó Văn Hải", "Marketing", "Affiliate Manager", "hai.pho@company.com", "0967890129", "30/04/2021", "15,500,000"],
+    ["Quang Thị Hương", "Kỹ Thuật", "IoT Engineer", "huong.quang@company.com", "0978901240", "08/08/2019", "21,000,000"],
+    ["Sơn Văn Khải", "Kinh Doanh", "Retail Manager", "khai.son@company.com", "0989012351", "16/11/2020", "17,500,000"],
+    ["Tống Thị Lan", "Nhân Sự", "Onboarding Specialist", "lan.tong@company.com", "0990123462", "24/02/2022", "12,500,000"],
+];
+
+const PAGE_SIZE = 8;
+let currentPage = 1;
+let filteredData = [...allData];
+
+function applySearch() {
+    const query = document.getElementById("searchInput").value.toLowerCase().trim();
+    if (!query) {
+        filteredData = [...allData];
+    } else {
+        filteredData = allData.filter(row => 
+            row.some(cell => cell.toLowerCase().includes(query))
+        );
+    }
+    currentPage = 1;
+    renderTable();
+}
+
+function renderTable() {
+    const tbody = document.getElementById("tableBody");
+    tbody.innerHTML = "";
+    
+    const totalPages = Math.ceil(filteredData.length / PAGE_SIZE);
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const slice = filteredData.slice(start, start + PAGE_SIZE);
+    
+    slice.forEach((row, i) => {
+        const tr = document.createElement("tr");
+        const stt = start + i + 1;
+        tr.innerHTML = `<td>${stt}</td>` + row.map(c => `<td>${c}</td>`).join("");
+        tbody.appendChild(tr);
+    });
+    
+    document.getElementById("pageInfo").textContent = 
+        `Trang ${currentPage} / ${totalPages || 1} — Tổng số bản ghi: ${filteredData.length}`;
+    
+    updatePagination(totalPages);
+}
+
+function updatePagination(totalPages) {
+    document.getElementById("btnFirst").disabled = currentPage === 1;
+    document.getElementById("btnPrev").disabled = currentPage === 1;
+    document.getElementById("btnNext").disabled = currentPage >= totalPages;
+    document.getElementById("btnLast").disabled = currentPage >= totalPages;
+    
+    // Render page numbers dynamically
+    const pageNumbers = document.getElementById("pageNumbers");
+    pageNumbers.innerHTML = "";
+    const maxVisible = 5;
+    let start = Math.max(1, currentPage - 2);
+    let end = Math.min(totalPages, start + maxVisible - 1);
+    if (end - start < maxVisible - 1) start = Math.max(1, end - maxVisible + 1);
+    
+    for (let p = start; p <= end; p++) {
+        const btn = document.createElement("button");
+        btn.textContent = p;
+        btn.className = p === currentPage ? "active" : "";
+        btn.addEventListener("click", () => { currentPage = p; renderTable(); });
+        pageNumbers.appendChild(btn);
+    }
+}
+
+document.getElementById("searchInput").addEventListener("input", applySearch);
+document.getElementById("btnFirst").addEventListener("click", () => { currentPage = 1; renderTable(); });
+document.getElementById("btnPrev").addEventListener("click", () => { if (currentPage > 1) { currentPage--; renderTable(); } });
+document.getElementById("btnNext").addEventListener("click", () => { 
+    const totalPages = Math.ceil(filteredData.length / PAGE_SIZE);
+    if (currentPage < totalPages) { currentPage++; renderTable(); }
+});
+document.getElementById("btnLast").addEventListener("click", () => { 
+    currentPage = Math.ceil(filteredData.length / PAGE_SIZE);
+    renderTable();
+});
+
+renderTable();
+</script>
+
+</body>
+</html>
