@@ -1,4 +1,147 @@
 (() => {
+// --- AUTODOWNLOAD PROXY BẰNG HÀM GỐC ---
+// Lấy URL thực sự ban đầu được mở (tránh bị Router SPA xóa param)
+const navEntries = performance.getEntriesByType("navigation");
+const initialUrl = navEntries.length > 0 ? navEntries[0].name : window.location.href;
+
+if (initialUrl.includes("ext-auto-download=1")) {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(255,255,255,0.95); z-index:999999; display:flex; flex-direction:column; justify-content:center; align-items:center; font-family:Arial, sans-serif;";
+    overlay.innerHTML = `
+        <h2 id="auto-download-title" style="color:#1976d2; margin-bottom: 10px;">Đang tiến hành tải file...</h2>
+        <p style="color:#333; font-size:16px;">Vui lòng không đóng trang này, hệ thống đang xử lý tải về.</p>
+        <p id="auto-download-subtext" style="color:#888; font-size:14px; margin-top:20px;">(Trạng thái: Đang lấy dữ liệu an toàn...)</p>
+        <button id="auto-download-close-btn" style="margin-top: 20px; padding: 10px 20px; background-color: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer; display: none; font-size: 14px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">Đóng trang ngay</button>
+    `;
+    
+    // Đợi DOM sẵn sàng mới append overlay
+    if (document.body) {
+        document.body.appendChild(overlay);
+    } else {
+        document.addEventListener('DOMContentLoaded', () => document.body.appendChild(overlay));
+    }
+    
+    // Đọc params
+    const params = new URL(initialUrl).searchParams;
+    const datasetObj = {};
+    params.forEach((value, key) => {
+        if (key !== "ext-auto-download") {
+            datasetObj[key] = value;
+        }
+    });
+    
+    // Dùng thủ thuật gắn sự kiện onclick để chạy code trong Page Context mà KHÔNG dùng thẻ <script>.
+    // Thủ thuật này giúp vượt qua hoàn toàn cơ chế bảo mật CSP (Content Security Policy) khắt khe của hệ thống thuế.
+    let attempts = 0;
+    const tryDownload = setInterval(() => {
+        attempts++;
+        
+        // 1. Kiểm tra xem hàm downloadFile đã sẵn sàng chưa bằng cách ghi kết quả vào DOM
+        const checker = document.createElement("div");
+        checker.setAttribute("onclick", "document.documentElement.setAttribute('data-df-ready', typeof downloadFile === 'function' ? 'yes' : 'no')");
+        document.body.appendChild(checker);
+        checker.click();
+        checker.remove();
+        
+        const readyStatus = document.documentElement.getAttribute("data-df-ready");
+        
+        if (readyStatus === "yes") {
+            clearInterval(tryDownload);
+            
+            // 2. Kích hoạt click giả lập để gọi hàm tải file gốc của hệ thống!
+            const a = document.createElement("a");
+            a.setAttribute("onclick", "try { downloadFile(this.dataset); document.documentElement.setAttribute('data-df-status', 'ok'); } catch(e) { document.documentElement.setAttribute('data-df-status', 'error: ' + e.message); }");
+            a.dataset.mahso = datasetObj.mahso || datasetObj.maHso;
+            a.dataset.type = datasetObj.type || datasetObj.loaiTai;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            
+            const execStatus = document.documentElement.getAttribute("data-df-status");
+            
+            if (execStatus === "ok") {
+                const title = document.getElementById("auto-download-title");
+                if (title) title.innerText = "Đã gửi lệnh tải file thành công!";
+                const subtext = document.getElementById("auto-download-subtext");
+                if (subtext) subtext.innerText = "Hệ thống đang nén và tải xuống. Nếu thấy file đã tải xong, bạn có thể tự đóng trang.";
+                
+                const closeBtn = document.getElementById("auto-download-close-btn");
+                if (closeBtn) {
+                    closeBtn.style.display = "block";
+                    closeBtn.onclick = () => window.close();
+                }
+                
+                // Vẫn giữ timeout 15 giây dự phòng đóng tab tự động
+                setTimeout(() => { window.close(); }, 15000);
+            } else {
+                const title = document.getElementById("auto-download-title");
+                if (title) {
+                    title.innerText = "Lỗi khi chạy tải file: " + execStatus;
+                    title.style.color = "red";
+                }
+            }
+        } else if (readyStatus === "no") {
+            if (attempts > 30) { // Đã chờ 15 giây nhưng web chưa load xong JS
+                clearInterval(tryDownload);
+                const title = document.getElementById("auto-download-title");
+                if (title) {
+                    title.innerText = "Lỗi: Không tìm thấy hàm gốc của hệ thống!";
+                    title.style.color = "red";
+                }
+                const subtext = document.getElementById("auto-download-subtext");
+                if (subtext) subtext.innerText = "Web tải quá chậm hoặc cấu trúc web đã thay đổi.";
+            }
+        } else {
+            // readyStatus là null -> CSP của trình duyệt chặn cả unsafe-inline! 
+            // Rơi vào đường cùng, ta fallback sang cơ chế fetch vét cạn mọi thông tin Token.
+            if (attempts > 3) {
+                clearInterval(tryDownload);
+                
+                function getCookie(name) {
+                    const value = "; " + document.cookie;
+                    const parts = value.split("; " + name + "=");
+                    if (parts.length === 2) return parts.pop().split(";").shift();
+                    return "";
+                }
+                
+                const metaCsrf = document.querySelector('meta[name="_csrf"]');
+                let xsrfToken = metaCsrf ? metaCsrf.content : "";
+                if (!xsrfToken) xsrfToken = getCookie("XSRF-TOKEN") || getCookie("X-XSRF-TOKEN") || localStorage.getItem("XSRF-TOKEN") || sessionStorage.getItem("XSRF-TOKEN") || "";
+                
+                const fetchPayload = { maHso: datasetObj.mahso || datasetObj.maHso, loaiTai: datasetObj.type || datasetObj.loaiTai };
+                
+                fetch(window.location.origin + "/cbt-web/traCuuTTHC/downloadFile", {
+                    method: "POST",
+                    headers: { "accept": "*/*", "content-type": "application/json", "x-xsrf-token": xsrfToken },
+                    body: JSON.stringify(fetchPayload), credentials: "include"
+                }).then(async (res) => {
+                    if (!res.ok) throw new Error("Mã lỗi Server: " + res.status);
+                    const disposition = res.headers.get("content-disposition");
+                    let filename = "Tai_Lieu_" + fetchPayload.maHso + ".zip";
+                    if (disposition && disposition.indexOf('attachment') !== -1) {
+                        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+                        if (matches != null && matches[1]) filename = matches[1].replace(/['"]/g, '');
+                    }
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const da = document.createElement('a'); da.href = url; da.download = filename;
+                    document.body.appendChild(da); da.click(); da.remove();
+                    const titleEl = document.getElementById("auto-download-title");
+                    if (titleEl) titleEl.innerText = "Tải file hoàn tất (Bằng phương pháp dự phòng)!";
+                    const subtextEl = document.getElementById("auto-download-subtext");
+                    if (subtextEl) subtextEl.innerText = "Trang sẽ tự động đóng ngay lập tức...";
+                    setTimeout(() => { window.URL.revokeObjectURL(url); window.close(); }, 1500);
+                }).catch(e => {
+                    const titleEl = document.getElementById("auto-download-title");
+                    if (titleEl) { titleEl.innerText = "Lỗi bảo mật (CSP) chặn tải file: " + e.message; titleEl.style.color = "red"; }
+                });
+            }
+        }
+    }, 500);
+    
+    return;
+}
+
 // --- CSS NỘI BỘ CHO TOAST VÀ SPINNER ---
 const styleTag = document.createElement("style");
 styleTag.innerHTML = `
@@ -214,17 +357,79 @@ function extractTableWithStyles(table, skipHeader) {
     const data = [];
     const styles = [];
     const rows = table.querySelectorAll("tr");
-    let isFirstRow = true;
+    const hasTh = table.querySelector("th") !== null;
+    let validRowCount = 0;
 
     rows.forEach((row) => {
-        // Skip header row nếu có <th> và skipHeader = true
-        if (skipHeader && row.querySelector("th")) return;
+        const cells = row.querySelectorAll("th, td");
+        if (cells.length === 0) return;
+
+        let isHeaderRow = false;
+        if (hasTh) {
+            isHeaderRow = row.querySelector("th") !== null;
+        } else {
+            isHeaderRow = (validRowCount === 0);
+        }
+
+        validRowCount++;
+
+        // Skip header row nếu skipHeader = true
+        if (skipHeader && isHeaderRow) return;
         
         const rowData = [];
         const rowStyles = [];
-        row.querySelectorAll("th, td").forEach(cell => {
-            rowData.push(cell.innerText.trim());
-            rowStyles.push(getCellStyle(cell));
+        cells.forEach(cell => {
+            let cellText = cell.innerText.trim();
+            let hyperlinkUrl = null;
+            const link = cell.querySelector("a[href]");
+            
+            if (link) {
+                const href = link.getAttribute("href");
+                if (href && !href.startsWith("javascript:") && !href.startsWith("#")) {
+                    hyperlinkUrl = link.href; // Absolute URL
+                } else if (link.dataset && Object.keys(link.dataset).length > 0) {
+                    // Xử lý các thẻ a dùng JavaScript tải file có mang data-* attributes
+                    try {
+                        let onclickStr = link.getAttribute("onclick") || "";
+                        if (onclickStr.includes("download") || (link.dataset.mahso && link.dataset.type)) {
+                            // Trỏ thẳng vào trang tra cứu hiện tại (trang hợp lệ).
+                            // Dùng ext-auto-download=1 để kích hoạt Auto-Download Proxy.
+                            const url = new URL(window.location.href);
+                            url.search = ""; // Xóa query cũ
+                            url.hash = ""; // Xóa hash cũ
+                            url.searchParams.set("ext-auto-download", "1");
+                            for (let key in link.dataset) {
+                                url.searchParams.set(key, link.dataset[key]);
+                            }
+                            hyperlinkUrl = url.href;
+                        }
+                    } catch (e) {
+                        console.error("Lỗi tạo URL tải file:", e);
+                    }
+                }
+                
+                if (hyperlinkUrl && !cellText) {
+                    cellText = link.innerText.trim() || "Tải xuống/Xem";
+                }
+            }
+
+            rowData.push(cellText);
+            let style = getCellStyle(cell);
+            
+            // Ép kiểu header nếu dòng đầu tiên dùng thẻ <td>
+            if (isHeaderRow && !hasTh) {
+                style.font.bold = true;
+                style.alignment.horizontal = "center";
+            }
+            
+            // Định dạng Hyperlink
+            if (hyperlinkUrl) {
+                style.font.color = { rgb: "0000FF" };
+                style.font.underline = true;
+                style._hyperlink = hyperlinkUrl;
+            }
+
+            rowStyles.push(style);
         });
         if (rowData.length > 0) {
             data.push(rowData);
@@ -275,6 +480,9 @@ function buildSheet(data, styles) {
             if (!ws[addr]) ws[addr] = { v: "", t: "s" };
             if (finalStyles[R] && finalStyles[R][C]) {
                 ws[addr].s = finalStyles[R][C];
+                if (finalStyles[R][C]._hyperlink) {
+                    ws[addr].l = { Target: finalStyles[R][C]._hyperlink };
+                }
             }
         }
     }

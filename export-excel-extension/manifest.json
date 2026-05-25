@@ -5,7 +5,10 @@
   "description": "Thêm nút export table ra excel cho trang nội bộ",
   "content_scripts": [
     {
-      "matches": ["*://dichvucongcbt.gdt.gov.vn/*", "file:///*"],
+      "matches": [
+        "*://dichvucongcbt.gdt.gov.vn/*",
+        "file:///*"
+      ],
       "js": ["xlsx-js-style.min.js", "content.js"]
     }
   ]
