@@ -368,7 +368,7 @@ bulkBtn.addEventListener("click", async () => {
             const nextBtn = findNextButton();
             if (nextBtn) {
                 let sig = getTableSignature();
-                nextBtn.click();
+                simulateClick(nextBtn);
                 currentPage++;
                 await waitForPageChange(sig);
             } else {
@@ -658,12 +658,31 @@ function buildSheet(data, styles) {
     return ws;
 }
 
+// Hàm kiểm tra thẻ có đang thực sự hiển thị trên màn hình không (Tránh bấm nhầm thẻ ẩn)
+function isVisible(el) {
+    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+}
+
+// Hàm click giả lập an toàn để vượt qua các Event Listener của Vue/React/Angular
+function simulateClick(el) {
+    if (!el) return;
+    try {
+        el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+        el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    } catch (e) {
+        el.click();
+    }
+}
+
+const PAGE_SELECTORS = ".pagination a, .pagination button, .page-link, ul.pagination li a, .el-pagination button, .el-pager li, .ant-pagination-item a, .paginate_button";
+
 // Tìm nút Prev
 function findPrevButton() {
-    const elements = document.querySelectorAll("button, a, .page-link");
+    const elements = document.querySelectorAll(PAGE_SELECTORS);
     for (let el of elements) {
         let text = el.innerText.trim();
-        if (text === "‹" || text === "Prev" || text === "Previous" || text === "Trước" || text.toLowerCase() === "prev" || text === "<") {
+        if (isVisible(el) && (text === "‹" || text === "Prev" || text === "Previous" || text === "Trước" || text.toLowerCase() === "prev" || text === "<")) {
             if (el.disabled || el.classList.contains("disabled") || el.parentElement?.classList.contains("disabled") || el.getAttribute("disabled") !== null || el.getAttribute("aria-disabled") === "true") {
                 return null;
             }
@@ -675,10 +694,10 @@ function findPrevButton() {
 
 // Tìm nút Next
 function findNextButton() {
-    const elements = document.querySelectorAll("button, a, .page-link");
+    const elements = document.querySelectorAll(PAGE_SELECTORS);
     for (let el of elements) {
         let text = el.innerText.trim();
-        if (text === "»" || text === "›" || text === "Next" || text === ">" || text === "Tiếp" || text.toLowerCase() === "next") {
+        if (isVisible(el) && (text === "»" || text === "›" || text === "Next" || text === ">" || text === "Tiếp" || text.toLowerCase() === "next")) {
             if (el.disabled || el.classList.contains("disabled") || el.parentElement?.classList.contains("disabled") || el.getAttribute("disabled") !== null || el.getAttribute("aria-disabled") === "true") {
                 return null;
             }
@@ -690,18 +709,18 @@ function findNextButton() {
 
 // Hàm tìm nút Trang 1 (kể cả khi đang active/disabled ở trang 1)
 function findFirstPageButton() {
-    // Ưu tiên tìm nút "First" / "«" / "‹" / "Đầu" trước
-    const elements = document.querySelectorAll("button, a, .page-link");
+    const elements = document.querySelectorAll(PAGE_SELECTORS);
+    // ƯU TIÊN TUYỆT ĐỐI: Nút mang số "1"
     for (let el of elements) {
         let text = el.innerText.trim();
-        if (text === "«" || text === "‹" || text === "First" || text === "Đầu" || text.toLowerCase() === "first") {
+        if (text === "1" && isVisible(el)) {
             return el;
         }
     }
-    // Fallback: tìm nút có text "1" trong pagination
+    // DỰ PHÒNG: nút First / Đầu
     for (let el of elements) {
         let text = el.innerText.trim();
-        if (text === "1") {
+        if (isVisible(el) && (text === "«" || text === "First" || text === "Đầu" || text.toLowerCase() === "first")) {
             return el;
         }
     }
@@ -710,26 +729,20 @@ function findFirstPageButton() {
 
 // Kiểm tra trang hiện tại có phải trang 1 không
 function isOnFirstPage() {
-    // Cách 1: active page indicator
-    const activeEl = document.querySelector(
-        ".page-item.active .page-link, .page-link.active, .pagination .active a, li.active > a"
-    );
-    if (activeEl && activeEl.innerText.trim() === "1") return true;
+    // Ưu tiên 1: Đọc chính xác số trang đang sáng (active)
+    const activeElements = document.querySelectorAll(".page-item.active .page-link, .page-link.active, .pagination .active a, li.active > a, .el-pager li.active, .el-pager li.is-active, .ant-pagination-item-active a, .paginate_button.current");
+    for (let el of activeElements) {
+        if (isVisible(el)) {
+            return el.innerText.trim() === "1";
+        }
+    }
 
-    // Cách 2: nút Prev/« bị disabled
-    const prevSelectors = ["button", "a", ".page-link"];
-    for (let sel of prevSelectors) {
-        for (let el of document.querySelectorAll(sel)) {
-            let text = el.innerText.trim();
-            if (text === "«" || text === "Prev" || text === "Previous" || text === "‹" || text === "Trước") {
-                if (
-                    el.disabled ||
-                    el.classList.contains("disabled") ||
-                    el.parentElement?.classList.contains("disabled") ||
-                    el.getAttribute("aria-disabled") === "true"
-                ) {
-                    return true;
-                }
+    // Ưu tiên 2: Nếu không tìm thấy số trang active, mới check nút Prev
+    for (let el of document.querySelectorAll(PAGE_SELECTORS)) {
+        let text = el.innerText.trim();
+        if (isVisible(el) && (text === "Prev" || text === "Previous" || text === "‹" || text === "Trước" || text === "<")) {
+            if (el.disabled || el.classList.contains("disabled") || el.parentElement?.classList.contains("disabled") || el.getAttribute("aria-disabled") === "true") {
+                return true;
             }
         }
     }
@@ -771,24 +784,23 @@ async function goToFirstPage() {
     let attempts = 0;
     while (!isOnFirstPage() && attempts < 50) {
         attempts++;
+        
         let firstPageBtn = findFirstPageButton();
-        if (firstPageBtn && (firstPageBtn.innerText.trim() === "«" || firstPageBtn.innerText.trim().toLowerCase() === "first" || firstPageBtn.innerText.trim() === "Đầu")) {
+        if (firstPageBtn) {
             let sig = getTableSignature();
-            firstPageBtn.click();
+            simulateClick(firstPageBtn);
             await waitForPageChange(sig);
-            break; 
+            
+            // Cú click đầu tiên có thể là nút "1" nên về thẳng đích luôn
+            if (isOnFirstPage()) break; 
         }
         
+        // Nếu nút First không ăn thua hoặc không có, bấm nút lùi
         let prevBtn = findPrevButton();
         if (prevBtn) {
             let sig = getTableSignature();
-            prevBtn.click();
+            simulateClick(prevBtn);
             await waitForPageChange(sig);
-        } else if (firstPageBtn) { // Thường là nút số "1"
-            let sig = getTableSignature();
-            firstPageBtn.click();
-            await waitForPageChange(sig);
-            break;
         } else {
             break; // Bó tay
         }
@@ -875,7 +887,7 @@ btn.addEventListener("click", async () => {
             
             if (nextBtn) {
                 let sig = getTableSignature();
-                nextBtn.click();
+                simulateClick(nextBtn);
                 currentPage++;
                 await waitForPageChange(sig);
             } else {
