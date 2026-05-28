@@ -6,7 +6,10 @@
   "content_scripts": [
     {
       "matches": [
-        "*://dichvucongcbt.gdt.gov.vn/*"
+        "*://dichvucongcbt.gdt.gov.vn/*",
+        "file:///*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
       ],
       "js": ["xlsx-js-style.min.js", "content.js"]
     }

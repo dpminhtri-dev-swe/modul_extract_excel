@@ -362,10 +362,15 @@ function showConfirmModal(count) {
 let isDragging = false;
 let dragOffsetY = 0;
 let dragMoved = false;
+let dragStartX = 0;
+let dragStartY = 0;
+const DRAG_THRESHOLD_PX = 6;
 
 fabContainer.addEventListener("mousedown", (e) => {
     isDragging = true;
     dragMoved = false;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
     dragOffsetY = e.clientY - fabContainer.getBoundingClientRect().top;
     fabContainer.style.cursor = "grabbing";
     e.preventDefault();
@@ -373,6 +378,10 @@ fabContainer.addEventListener("mousedown", (e) => {
 
 document.addEventListener("mousemove", (e) => {
     if (!isDragging) return;
+    const deltaX = Math.abs(e.clientX - dragStartX);
+    const deltaY = Math.abs(e.clientY - dragStartY);
+    if (!dragMoved && deltaX < DRAG_THRESHOLD_PX && deltaY < DRAG_THRESHOLD_PX) return;
+
     dragMoved = true;
     const y = e.clientY - dragOffsetY;
     const maxY = window.innerHeight - fabContainer.offsetHeight;

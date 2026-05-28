@@ -79,6 +79,15 @@ class TestElement {
         return this.offsetWidth || this.offsetHeight ? [{}] : [];
     }
 
+    getBoundingClientRect() {
+        return {
+            top: Number.parseFloat(this.style.top) || 0,
+            left: Number.parseFloat(this.style.left) || 0,
+            width: this.offsetWidth,
+            height: this.offsetHeight
+        };
+    }
+
     get rows() {
         return this.querySelectorAll("tr");
     }
@@ -208,7 +217,9 @@ class TestDocument extends TestElement {
         return descendants(this).find((el) => el.attributes.id === id) || null;
     }
 
-    addEventListener() {}
+    addEventListener(type, handler) {
+        super.addEventListener(type, handler);
+    }
 }
 
 function mockXlsx() {
@@ -253,6 +264,7 @@ function loadExtension(url = "https://dichvucongcbt.gdt.gov.vn/traCuuTTHC/seacrc
             replaceState() {}
         },
         addEventListener() {},
+        innerHeight: 800,
         getComputedStyle(el) {
             return {
                 backgroundColor: el.style.backgroundColor || "rgba(0, 0, 0, 0)",
@@ -401,6 +413,38 @@ test("pagination helpers respect active and disabled states", () => {
 
     next.setAttribute("aria-disabled", "true");
     assert.equal(api.findNextButton(), null);
+});
+
+test("floating action buttons do not move or swallow normal clicks", () => {
+    const { api, document } = loadExtension();
+    const { fabContainer } = api._elements;
+    fabContainer.offsetHeight = 120;
+
+    fabContainer.dispatchEvent({
+        type: "mousedown",
+        clientX: 100,
+        clientY: 100,
+        preventDefault() {}
+    });
+    document.dispatchEvent({ type: "mousemove", clientX: 103, clientY: 104 });
+    document.dispatchEvent({ type: "mouseup" });
+
+    assert.equal(fabContainer.style.top || "", "");
+    assert.equal(fabContainer.style.left || "", "");
+    assert.equal(fabContainer.style.right, "24px");
+
+    fabContainer.dispatchEvent({
+        type: "mousedown",
+        clientX: 100,
+        clientY: 100,
+        preventDefault() {}
+    });
+    document.dispatchEvent({ type: "mousemove", clientX: 100, clientY: 180 });
+    document.dispatchEvent({ type: "mouseup" });
+
+    assert.equal(fabContainer.style.top, "80px");
+    assert.equal(fabContainer.style.right, "12px");
+    assert.equal(fabContainer.style.left, "auto");
 });
 
 test("extractTableWithStyles skips repeated header and converts safe JS links to auto-download URLs", () => {
