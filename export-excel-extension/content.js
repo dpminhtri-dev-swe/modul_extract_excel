@@ -1,4 +1,37 @@
 (() => {
+const AUTO_DOWNLOAD_ACTION = "download-file";
+const SAFE_DOWNLOAD_CALL = "downloadFile(this.dataset)";
+
+function isAllowedDownloadCode(code) {
+    return /^\s*downloadFile\s*\(\s*this\.dataset\s*\)\s*;?\s*(?:return\s+false\s*;?\s*)?$/i.test(code || "");
+}
+
+function copySafeDataset(source) {
+    const safe = {};
+    for (let key in source) {
+        if (!/^[a-zA-Z0-9_]{1,64}$/.test(key)) continue;
+        safe[key] = String(source[key]).slice(0, 2048);
+    }
+    return safe;
+}
+
+function buildSafeDownloadOnclick(includeStatus) {
+    const successStatus = includeStatus ? "document.documentElement.setAttribute('data-df-status', 'ok');" : "";
+    const errorStatus = includeStatus ? `
+                if (e instanceof ReferenceError) {
+                    document.documentElement.setAttribute('data-df-status', 'wait');
+                } else {
+                    document.documentElement.setAttribute('data-df-status', 'error: ' + e.message);
+                }` : "console.error('Bulk DL Error:', e);";
+
+    return `
+            try {
+                ${SAFE_DOWNLOAD_CALL};
+                ${successStatus}
+            } catch(e) {${errorStatus}
+            }
+        `;
+}
 // --- AUTODOWNLOAD PROXY BẰNG HÀM GỐC ---
 // Lấy URL thực sự ban đầu được mở (tránh bị Router SPA xóa param)
 const navEntries = performance.getEntriesByType("navigation");
@@ -25,6 +58,7 @@ if (initialUrl.includes("ext-auto-download=1")) {
     const params = new URL(initialUrl).searchParams;
     const datasetObj = {};
     let onclickStr = "";
+    let requestedAction = params.get("ext-action") || "";
     
     params.forEach((value, key) => {
         if (key === "ext-onclick-b64") {
@@ -41,9 +75,21 @@ if (initialUrl.includes("ext-auto-download=1")) {
         }
     });
     
-    if (!onclickStr) {
-        // Fallback for old links
-        onclickStr = "downloadFile(this.dataset)";
+    if (requestedAction !== AUTO_DOWNLOAD_ACTION) {
+        if (!onclickStr || isAllowedDownloadCode(onclickStr)) {
+            requestedAction = AUTO_DOWNLOAD_ACTION;
+        }
+    }
+
+    if (requestedAction !== AUTO_DOWNLOAD_ACTION) {
+        const title = document.getElementById("auto-download-title");
+        if (title) {
+            title.innerText = "Link tai khong hop le";
+            title.style.color = "red";
+        }
+        const subtext = document.getElementById("auto-download-subtext");
+        if (subtext) subtext.innerText = "Extension chi cho phep hanh dong tai file da duoc whitelist.";
+        return;
     }
     
     // Dùng thủ thuật gắn sự kiện onclick để chạy code trong Page Context mà KHÔNG dùng thẻ <script>.
@@ -55,21 +101,11 @@ if (initialUrl.includes("ext-auto-download=1")) {
         const a = document.createElement("a");
         // Đưa đoạn mã của trang gốc vào trong try...catch.
         // Nếu hàm chưa load xong (ReferenceError), nó sẽ báo 'wait' để chờ tiếp.
-        a.setAttribute("onclick", `
-            try { 
-                ${onclickStr}; 
-                document.documentElement.setAttribute('data-df-status', 'ok'); 
-            } catch(e) { 
-                if (e instanceof ReferenceError) {
-                    document.documentElement.setAttribute('data-df-status', 'wait');
-                } else {
-                    document.documentElement.setAttribute('data-df-status', 'error: ' + e.message); 
-                }
-            }
-        `);
+        a.setAttribute("onclick", buildSafeDownloadOnclick(true));
         
-        for (let key in datasetObj) {
-            a.dataset[key] = datasetObj[key];
+        const safeDatasetObj = copySafeDataset(datasetObj);
+        for (let key in safeDatasetObj) {
+            a.dataset[key] = safeDatasetObj[key];
         }
         
         document.body.appendChild(a);
@@ -236,14 +272,91 @@ fabContainer.appendChild(bulkBtn);
 fabContainer.appendChild(btn);
 document.body.appendChild(fabContainer);
 
-// Ẩn hiện nút Tải Hàng Loạt theo đúng trang web yêu cầu (SPA router check)
-setInterval(() => {
-    if (window.location.href.includes("traCuuTTHC/seacrchTTHC")) {
+// --- THEO DÕI URL TRONG SPA (KHÔNG DÙNG SETINTERVAL) ---
+// Thay vì đếm ngược mỗi 50ms, ta dùng MutationObserver để bắt chính xác khoảnh khắc trang web thay đổi DOM (chuyển trang)
+let lastUrl = location.href;
+const toggleBulkBtnVisibility = () => {
+    const isTargetPage = window.location.href.includes("traCuuTTHC/seacrchTTHC");
+    if (isTargetPage && bulkBtn.style.display !== "flex") {
         bulkBtn.style.display = "flex";
-    } else {
+    } else if (!isTargetPage && bulkBtn.style.display !== "none") {
         bulkBtn.style.display = "none";
     }
-}, 500);
+};
+
+// Gọi lần đầu khi load
+toggleBulkBtnVisibility();
+
+// Theo dõi mọi sự thay đổi trên giao diện để cập nhật nút tức thì
+const checkUrlChange = () => {
+    if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        toggleBulkBtnVisibility();
+    }
+};
+
+["pushState", "replaceState"].forEach(method => {
+    const original = history[method];
+    history[method] = function(...args) {
+        const result = original.apply(this, args);
+        queueMicrotask(checkUrlChange);
+        return result;
+    };
+});
+window.addEventListener("popstate", checkUrlChange);
+
+// --- MODAL XÁC NHẬN ---
+function showConfirmModal(count) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement("div");
+        Object.assign(overlay.style, {
+            position: "fixed", top: "0", left: "0", width: "100vw", height: "100vh",
+            backgroundColor: "rgba(0, 0, 0, 0.5)", zIndex: "100000",
+            display: "flex", justifyContent: "center", alignItems: "center",
+            backdropFilter: "blur(3px)", fontFamily: "Arial, sans-serif"
+        });
+
+        const modal = document.createElement("div");
+        Object.assign(modal.style, {
+            backgroundColor: "white", padding: "25px", borderRadius: "12px",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.3)", maxWidth: "380px",
+            textAlign: "center", animation: "modalFadeIn 0.3s ease-out"
+        });
+
+        modal.innerHTML = `
+            <style>
+                @keyframes modalFadeIn {
+                    from { opacity: 0; transform: translateY(-20px) scale(0.95); }
+                    to { opacity: 1; transform: translateY(0) scale(1); }
+                }
+                .ext-btn-hover:hover { filter: brightness(1.05); transform: translateY(-1px); }
+                .ext-btn-active:active { transform: translateY(1px); }
+            </style>
+            <div style="font-size: 45px; margin-bottom: 10px; text-shadow: 0 4px 10px rgba(76,175,80,0.3);">📥</div>
+            <h2 style="margin: 0 0 10px 0; color: #222; font-size: 20px;">Xác nhận tải hàng loạt</h2>
+            <p style="margin: 0 0 20px 0; color: #555; font-size: 15px; line-height: 1.5;">
+                Bạn có chắc muốn tải xuống <b>${count} file</b>?
+            </p>
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button id="ext-cancel-btn" class="ext-btn-hover ext-btn-active" style="flex: 1; padding: 12px; border: none; border-radius: 8px; background-color: #f1f3f4; color: #444; font-size: 14px; font-weight: bold; cursor: pointer; transition: all 0.2s;">Hủy</button>
+                <button id="ext-confirm-btn" class="ext-btn-hover ext-btn-active" style="flex: 1; padding: 12px; border: none; border-radius: 8px; background-color: #4caf50; color: white; font-size: 14px; font-weight: bold; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 10px rgba(76,175,80,0.3);">Đồng ý</button>
+            </div>
+        `;
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        modal.querySelector("#ext-cancel-btn").onclick = () => {
+            overlay.remove();
+            resolve(false);
+        };
+        
+        modal.querySelector("#ext-confirm-btn").onclick = () => {
+            overlay.remove();
+            resolve(true);
+        };
+    });
+}
 
 // --- DRAG LOGIC ---
 let isDragging = false;
@@ -349,14 +462,14 @@ bulkBtn.addEventListener("click", async () => {
                         let isDownloadLink = false;
                         if (window.location.href.includes("traCuuTTHC/seacrchTTHC")) {
                             // Ưu tiên cực cao cho trang Thuế: Chỉ nhặt đúng hàm downloadFile, phớt lờ dsachThongBao, dsachTrangThai
-                            isDownloadLink = execCode.includes("downloadFile");
+                            isDownloadLink = isAllowedDownloadCode(execCode);
                         } else {
                             // Fallback cho các trang web khác
-                            isDownloadLink = execCode && (execCode.toLowerCase().includes("download") || (link.dataset && Object.keys(link.dataset).length > 0));
+                            isDownloadLink = isAllowedDownloadCode(execCode);
                         }
                         
                         if (isDownloadLink) {
-                            downloadCodes.push({ code: execCode, dataset: { ...link.dataset } });
+                            downloadCodes.push({ action: AUTO_DOWNLOAD_ACTION, dataset: copySafeDataset(link.dataset) });
                         } else if (rawHref && !rawHref.startsWith("javascript:") && !rawHref.startsWith("#") && !execCode) {
                             // Chỉ lấy link href thuần nếu nó không có mã js thực thi đi kèm
                             downloadCodes.push({ url: rawHref });
@@ -382,7 +495,9 @@ bulkBtn.addEventListener("click", async () => {
             return showToast("Không tìm thấy link tải file nào trong bảng!", "warning");
         }
         
-        if (!confirm(`Phát hiện ${downloadCodes.length} file. Bạn có chắc muốn tải hàng loạt?\n(Hệ thống sẽ dùng Chế độ An Toàn: giãn cách 0.8 giây mỗi file để trình duyệt không bị treo và không bị đánh dấu là spam)`)) {
+        // Gọi Modal HTML thay vì hàm confirm() nhàm chán của trình duyệt
+        const isConfirmed = await showConfirmModal(downloadCodes.length);
+        if (!isConfirmed) {
             bulkBtn.innerHTML = ICON_BULK;
             bulkBtn.disabled = false;
             return;
@@ -402,9 +517,9 @@ bulkBtn.addEventListener("click", async () => {
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
-                } else if (item.code) {
+                } else if (item.action === AUTO_DOWNLOAD_ACTION) {
                     const a = document.createElement("a");
-                    a.setAttribute("onclick", `try { ${item.code} } catch(e) { console.error('Bulk DL Error:', e); }`);
+                    a.setAttribute("onclick", buildSafeDownloadOnclick(false));
                     for (let key in item.dataset) {
                         a.dataset[key] = item.dataset[key];
                     }
@@ -548,7 +663,7 @@ function extractTableWithStyles(table, skipHeader) {
                     let onclickStr = link.getAttribute("onclick") || "";
                     let execCode = jsCode || onclickStr;
                     
-                    if (execCode) {
+                    if (isAllowedDownloadCode(execCode)) {
                         try {
                             const url = new URL(window.location.href);
                             url.search = ""; 
@@ -560,12 +675,12 @@ function extractTableWithStyles(table, skipHeader) {
                             // sẽ chặn đứng cái link (báo lỗi 403 / "Unable to open") nếu thấy trên link 
                             // có dính chữ "downloadFile(" hoặc ký tự code JS lạ. 
                             // Mã hóa Base64 sẽ biến nó thành chuỗi vô hại trong mắt WAF.
-                            const safeCode = btoa(encodeURIComponent(execCode));
-                            url.searchParams.set("ext-onclick-b64", safeCode);
+                            url.searchParams.set("ext-action", AUTO_DOWNLOAD_ACTION);
                             
                             // Mang theo toàn bộ dataset để mã JavaScript gốc sử dụng (VD: this.dataset.mahso)
-                            for (let key in link.dataset) {
-                                url.searchParams.set("data-" + key, link.dataset[key]);
+                            const safeDataset = copySafeDataset(link.dataset);
+                            for (let key in safeDataset) {
+                                url.searchParams.set("data-" + key, safeDataset[key]);
                             }
                             hyperlinkUrl = url.href;
                         } catch (e) {
@@ -751,7 +866,16 @@ function isOnFirstPage() {
 
 function getTableSignature() {
     const tables = document.querySelectorAll("table");
-    return Array.from(tables).map(t => t.innerText).join("||");
+    let mainTable = null;
+    let maxRows = 0;
+    tables.forEach(table => {
+        const rowCount = table.rows.length;
+        if (rowCount > maxRows) {
+            maxRows = rowCount;
+            mainTable = table;
+        }
+    });
+    return mainTable ? mainTable.innerText : "";
 }
 
 // Chờ cho đến khi trang load xong (dùng polling thay vì MutationObserver để tối ưu tốc độ)
@@ -833,6 +957,34 @@ function analyzeTables() {
 }
 
 // --- LOGIC XỬ LÝ CHÍNH KHI BẤM NÚT ---
+if (window.__EXPORT_EXCEL_EXTENSION_TEST_MODE__) {
+    window.__EXPORT_EXCEL_EXTENSION_TEST__ = {
+        AUTO_DOWNLOAD_ACTION,
+        SAFE_DOWNLOAD_CALL,
+        isAllowedDownloadCode,
+        copySafeDataset,
+        buildSafeDownloadOnclick,
+        showToast,
+        hideToast,
+        rgbToHex,
+        getCellStyle,
+        extractTableWithStyles,
+        autoColWidths,
+        buildSheet,
+        isVisible,
+        simulateClick,
+        findPrevButton,
+        findNextButton,
+        findFirstPageButton,
+        isOnFirstPage,
+        getTableSignature,
+        waitForPageChange,
+        goToFirstPage,
+        analyzeTables,
+        _elements: { fabContainer, btn, bulkBtn }
+    };
+}
+
 btn.addEventListener("click", async () => {
     btn.innerHTML = ICON_LOADING;
     btn.style.backgroundColor = "#607d8b";

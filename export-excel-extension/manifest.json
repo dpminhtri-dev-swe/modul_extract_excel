@@ -6,8 +6,7 @@
   "content_scripts": [
     {
       "matches": [
-        "*://dichvucongcbt.gdt.gov.vn/*",
-        "file:///*"
+        "*://dichvucongcbt.gdt.gov.vn/*"
       ],
       "js": ["xlsx-js-style.min.js", "content.js"]
     }
